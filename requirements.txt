@@ -1,0 +1,5 @@
+anndata
+vllm
+scanpy
+scipy
+scikit-learn
