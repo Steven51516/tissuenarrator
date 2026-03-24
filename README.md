@@ -8,6 +8,16 @@
 
 **TissueNarrator** is a generative framework that adapts large language models (LLMs) for spatial transcriptomics (ST). By representing tissue sections as *spatial sentences*—ranked gene lists enriched with spatial coordinates and metadata—it reformulates spatial omics analysis as a language modeling problem. The model learns spatially conditioned gene expression patterns, generates realistic cell profiles, predicts intercellular interactions, and performs in silico perturbations.
 
+## Hardware
+
+TissueNarrator runs on standard compute servers capable of supporting large language model inference. The experiments were conducted on a server equipped with an NVIDIA A6000 GPU (48 GB VRAM).
+
+
+## Operating System
+
+TissueNarrator is Python-based and runs on all major operating systems. It has been tested on Springdale Linux.
+
+
 ## Installation
 
 
@@ -27,10 +37,12 @@
     conda activate tn_env
     pip install unsloth
     ```
+    *This step typically takes ~8 minutes, depending on network speed and system configuration.*
 2. **Install Additional Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
+   *This step typically takes ~2 minutes.*
 
 
 ## Tutorials
