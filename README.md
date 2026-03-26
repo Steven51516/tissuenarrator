@@ -63,7 +63,7 @@ TissueNarrator is Python-based and runs on all major operating systems. It has b
 
 We provide a demo using the MERFISH mouse brain dataset ([paper](https://www.nature.com/articles/s41586-023-06808-9)) to help you get started with **TissueNarrator**. Please download the model checkpoint and preprocessed data [here](https://drive.google.com/drive/folders/16hO41QLqhSmegw9kFJtyIlN2DfbVbIU8?usp=sharing).
 
-The [demo notebook](tutorials/demo.ipynb) shows how to generate cells in test sections using TissueNarrator. It typically runs in about 10 minutes, depending on your GPU setup.
+The [demo notebook](tutorials/demo.ipynb) shows how to generate cells in test sections using TissueNarrator and prints evaluation metrics for the generated cells. On the sample test dataset, it is expected to achieve an NDCG score > 0.8 and an overlap score > 0.4. It typically runs in about 10 minutes, depending on your GPU setup.
 
 We also provide tutorials for [data preprocessing](tutorials/01_preprocess.ipynb) and [training](tutorials/02_train.ipynb).
 
