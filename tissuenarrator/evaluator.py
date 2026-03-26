@@ -5,7 +5,7 @@ from typing import List, Iterable, Tuple, Optional, Dict
 import math
 import collections
 
-from data import *
+from .data import *
 
 def dcg(relevances: Iterable[float]) -> float:
     return sum(rel / math.log2(i + 2) for i, rel in enumerate(relevances))

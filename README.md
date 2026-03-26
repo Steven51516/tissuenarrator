@@ -44,16 +44,28 @@ TissueNarrator is Python-based and runs on all major operating systems. It has b
    ```
    *This step typically takes ~2 minutes.*
 
+   **Key package versions:**
 
-## Tutorials
+   | Package | Version |
+   | :--- | :--- |
+   | **anndata** | 0.12.0 |
+   | **vllm** | 0.10.1.1 |
+   | **scanpy** | 1.11.4 |
+   | **scipy** | 1.16.0 |
+   | **scikit-learn** | 1.7.1 |
+   | **numpy** | 2.2.0 |
+   | **pandas** | 2.3.1 |
+   | **matplotlib** | 3.10.5 |
+   | **seaborn** | 0.13.2 |
 
-We provide several tutorials to help you get started with **TissueNarrator**:
 
-| Name | Description |
-|------|--------------|
-| [Preprocess](tutorials/01_preprocess.ipynb) | Data preprocessing and spatial sentence construction |
-| [Train](tutorials/02_train.ipynb) | Model fine-tuning with Unsloth |
-| [Evaluate](tutorials/03_eval.ipynb) | Inference and evaluation |
+## Demo
+
+We provide a demo using the MERFISH mouse brain dataset ([paper](https://www.nature.com/articles/s41586-023-06808-9)) to help you get started with **TissueNarrator**. Please download the model checkpoint and preprocessed data [here](https://drive.google.com/drive/folders/16hO41QLqhSmegw9kFJtyIlN2DfbVbIU8?usp=sharing).
+
+The demo notebook shows how to generate new cells in test sections using TissueNarrator. It typically runs in about 10 minutes, depending on your GPU setup.
+
+We also provide tutorials for data preprocessing (`tutorials/01_preprocess.ipynb`) and training (`tutorials/02_train.ipynb`).
 
 ## Training
 
