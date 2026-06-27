@@ -1,3 +1,25 @@
 .idea/
 __pycache__/
 .DS_Store
+*.pyc
+.ipynb_checkpoints/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Training / inference outputs
+output_*/
+cache_*/
+unsloth_compiled_cache/
+*_merged/
+*_lora/
+
+# Large data + model checkpoints are distributed via Google Drive, not git.
+# Download them into tutorials/data/ (see tutorials/data/README.md).
+tutorials/data/*
+!tutorials/data/README.md
+!tutorials/data/merfish_demo_sample.parquet
+*.h5ad
+*.safetensors

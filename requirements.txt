@@ -7,3 +7,11 @@ numpy==2.2.0
 pandas==2.3.1
 matplotlib==3.10.5
 seaborn==0.13.2
+
+# Tutorials / downstream analysis
+tqdm
+pyarrow
+squidpy
+gseapy
+polars
+statsmodels

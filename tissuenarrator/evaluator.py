@@ -1,4 +1,5 @@
-import re, math, torch
+import re, math, random, torch
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from typing import List, Iterable, Tuple, Optional, Dict
@@ -57,25 +58,42 @@ class SpatialEvaluator:
         self,
         prompt_text: str,
         target_cell: Optional[CellSentence],
-        order: Optional[str] = "far_to_near",
+        order: Optional[str] = "prob_far_to_near",
         total_prompt_cells: Optional[int] = None,
+        tau: float = 1.0,
     ) -> str:
         sp = SpatialSentence.from_string(prompt_text, strict=True)
         if not sp.cells or target_cell is None:
             return prompt_text
-    
+
         if order is not None:
             tx, ty = target_cell.xy()
             def dist(c: CellSentence) -> float:
                 cx, cy = c.xy()
                 return math.dist((tx, ty), (cx, cy))
-            reverse = (order == "far_to_near")
-            sp.cells = sorted(sp.cells, key=dist, reverse=reverse)
-    
+
+            if order == "prob_far_to_near":
+                # tau-regulated random far->near traversal (matches the training-time
+                # nn traversal): sample cells without replacement with probability
+                # proportional to dist**tau, so far cells tend to come first and the
+                # closest cells end up last (next to the target). tau controls how
+                # strongly distance is favoured.
+                remaining, ordered = sp.cells[:], []
+                while remaining:
+                    weights = [(dist(c) + 1e-8) ** tau for c in remaining]
+                    chosen = random.choices(remaining, weights=weights, k=1)[0]
+                    ordered.append(chosen)
+                    remaining.remove(chosen)
+                sp.cells = ordered
+            elif order == "random":
+                random.shuffle(sp.cells)
+            else:  # deterministic "far_to_near" / "near_to_far"
+                sp.cells = sorted(sp.cells, key=dist, reverse=(order == "far_to_near"))
+
         # apply trim even if no sorting
         if total_prompt_cells is not None and total_prompt_cells > 0:
             sp.cells = sp.cells[-total_prompt_cells:]
-    
+
         return sp.to_string(include_sentence_meta=True, include_cell=("pos", "meta", "cs"))
 
     def inference_batch(
@@ -84,14 +102,15 @@ class SpatialEvaluator:
         answers: List[str],
         max_new_tokens: int = 400,
         mode: str = "meta_all",
-        reorder_by_xy: Optional[str] = "far_to_near",
+        reorder_by_xy: Optional[str] = "prob_far_to_near",
         total_prompt_cells: Optional[int] = None,
+        tau: float = 1.0,
         **kwargs,
     ) -> List[str]:
         seeds, headers = [], []
         for prompt, answer in zip(prompts, answers):
             ans_cell = self._first_cell(answer)
-            prompt_sorted = self._reorder_prompt_by_distance(prompt, ans_cell, order=reorder_by_xy, total_prompt_cells=total_prompt_cells)
+            prompt_sorted = self._reorder_prompt_by_distance(prompt, ans_cell, order=reorder_by_xy, total_prompt_cells=total_prompt_cells, tau=tau)
             header = self._header_until_cs(ans_cell)
             if mode == "meta_neighbor" and ans_cell:
                 header = f"<pos> X: {ans_cell.x}, Y: {ans_cell.y} <meta>"
@@ -135,11 +154,12 @@ class SpatialEvaluator:
         greedy: bool = False,
         batch_size: int = 32,
         max_new_tokens: int = 400,
-        reorder_by_xy: Optional[str] = "far_to_near",
+        reorder_by_xy: Optional[str] = "prob_far_to_near",
         total_prompt_cells: Optional[int] = 100,
+        tau: float = 1.0,
         **kwargs,
     ):
-        
+
         valid_modes = {"meta_all", "meta_neighbor", "pos_only"}
         assert mode in valid_modes, f"Invalid mode '{mode}'. Must be one of {valid_modes}."
 
@@ -163,6 +183,7 @@ class SpatialEvaluator:
                     mode=mode, greedy=greedy,
                     reorder_by_xy=reorder_by_xy,
                     total_prompt_cells=total_prompt_cells,
+                    tau=tau,
                     **kwargs
                 )
                 for j, gb in enumerate(gblocks):
@@ -180,6 +201,184 @@ class SpatialEvaluator:
             for suf in [f"top_{k}_overlap", f"top_{k}_ndcg"]:
                 overall[suf] = mdf[suf].mean() if not mdf.empty else 0.0
         return mdf, overall, gens
+
+    # ------------------------------------------------------------------
+    # Simple, model-free reference baselines (overlap@k + ndcg@k only).
+    # These do NOT call the LLM; they predict a gene ranking for the target
+    # cell from the prompt neighbourhood / class statistics, then score it
+    # with the exact same _evaluate_block used for TissueNarrator.
+    # ------------------------------------------------------------------
+    def nearest_neighbor_block(
+        self,
+        prompt: str,
+        answer: str,
+        neighbor_filter: Optional[str] = None,
+        majority_radius: float = 50.0,
+    ) -> str:
+        """Nearest-Neighbor baseline: predict the gene ranking of a single prompt
+        cell chosen by spatial proximity to the target.
+
+        neighbor_filter:
+            None       -> closest prompt cell overall (no peek at the target's
+                          class; used for the unconditioned setting).
+            "majority" -> within `majority_radius` of the target, take the locally
+                          dominant class, then the closest cell of that class
+                          (used for the conditioned setting). Falls back to the
+                          single closest cell if no neighbour is in radius.
+            "class"    -> closest prompt cell that shares the target cell's own
+                          class (uses the target's metadata directly).
+
+        Returns a generated block string compatible with `_evaluate_block`.
+        """
+        p_cells = self._cells(prompt)
+        a_cell = self._first_cell(answer)
+        if not p_cells or a_cell is None:
+            return ""
+        txy = a_cell.xy()
+        cand = p_cells
+        if neighbor_filter == "majority":
+            dists = [(math.dist(txy, c.xy()), c) for c in p_cells]
+            in_radius = [(d, c) for d, c in dists if d <= majority_radius]
+            if in_radius:
+                classes = [c.class_lower() for _, c in in_radius]
+                maj = collections.Counter([c for c in classes if c]).most_common(1)
+                maj = maj[0][0] if maj else None
+                same = [c for _, c in in_radius if c.class_lower() == maj]
+                cand = same if same else [c for _, c in in_radius]
+            else:
+                cand = [min(dists, key=lambda x: x[0])[1]]
+        elif neighbor_filter == "class":
+            a_cls = a_cell.class_lower()
+            if a_cls:
+                same = [c for c in p_cells if c.class_lower() == a_cls]
+                if same:
+                    cand = same
+        chosen = min(cand, key=lambda c: math.dist(txy, c.xy()))
+        return (self._header_until_cs(a_cell) + " " + " ".join(chosen.cs) + " </cs>").strip()
+
+    def _dominant_neighbor_class(
+        self,
+        prompt: Optional[str],
+        neighbor_cell_names=None,
+        cell2class: Optional[Dict[str, str]] = None,
+    ) -> Optional[str]:
+        # Prefer classes embedded in the prompt metadata (conditioned prompts);
+        # fall back to an external cell -> class map keyed by neighbor cell names
+        # (needed for unconditioned/pos_only prompts that carry no metadata).
+        classes = [c.class_lower() for c in self._cells(prompt)] if prompt else []
+        classes = [c for c in classes if c]
+        if not classes and neighbor_cell_names is not None and cell2class is not None:
+            classes = [str(cell2class[str(n)]).strip().lower()
+                       for n in list(neighbor_cell_names) if str(n) in cell2class]
+        return collections.Counter(classes).most_common(1)[0][0] if classes else None
+
+    def class_mean_block(
+        self,
+        answer: str,
+        class_mean_table: Dict[str, str],
+        *,
+        prompt: Optional[str] = None,
+        neighbor_cell_names=None,
+        cell2class: Optional[Dict[str, str]] = None,
+        class_source: str = "target",
+    ) -> str:
+        """Class-Mean baseline: predict a cell class's mean-expression-ranked
+        gene list (built with `build_class_mean_table`).
+
+        class_source:
+            "target"   -> the target cell's own class, read from the answer
+                          header (conditioned setting).
+            "neighbor" -> the dominant class among the target's spatial
+                          neighbours (unconditioned setting; no peek at the
+                          target's own class). Neighbour classes come from the
+                          prompt metadata when present, else from
+                          `neighbor_cell_names` + `cell2class`.
+        """
+        a_cell = self._first_cell(answer)
+        if a_cell is None:
+            return ""
+        if class_source == "target":
+            cls = a_cell.class_lower()
+        elif class_source == "neighbor":
+            cls = self._dominant_neighbor_class(prompt, neighbor_cell_names, cell2class)
+        else:
+            raise ValueError("class_source must be 'target' or 'neighbor'")
+        genes = class_mean_table.get(cls, "") if cls else ""
+        return (self._header_until_cs(a_cell) + " " + str(genes).upper() + " </cs>").strip()
+
+    def evaluate_baseline_df(
+        self,
+        prompt_df: pd.DataFrame,
+        baseline: str = "nn",
+        max_rows: Optional[int] = None,
+        top_k_list=(10, 30, 50),
+        neighbor_filter: Optional[str] = None,
+        class_mean_table: Optional[Dict[str, str]] = None,
+        class_source: str = "target",
+        cell2class: Optional[Dict[str, str]] = None,
+    ):
+        """Score a model-free baseline over a prompt dataframe, returning
+        (metrics_df, overall, generated_blocks) exactly like `evaluate_prompt_df`
+        (overlap@k + ndcg@k only).
+
+        baseline:
+            "nn"         -> nearest_neighbor_block (see `neighbor_filter`).
+            "class_mean" -> class_mean_block (needs `class_mean_table`; see
+                            `class_source`, and `cell2class` for the neighbor
+                            variant on metadata-free prompts).
+        """
+        n = len(prompt_df) if max_rows is None else min(max_rows, len(prompt_df))
+        has_nb = "neighbor_cell_names" in prompt_df.columns
+        rows, gens = [], []
+        for i, r in tqdm(list(zip(range(n), prompt_df.itertuples(index=True))), total=n):
+            if baseline == "nn":
+                blk = self.nearest_neighbor_block(r.prompt, r.answer, neighbor_filter=neighbor_filter)
+            elif baseline == "class_mean":
+                if class_mean_table is None:
+                    raise ValueError("class_mean baseline needs class_mean_table=...")
+                blk = self.class_mean_block(
+                    r.answer, class_mean_table, prompt=r.prompt,
+                    neighbor_cell_names=(getattr(r, "neighbor_cell_names") if has_nb else None),
+                    cell2class=cell2class, class_source=class_source,
+                )
+            else:
+                raise ValueError("baseline must be 'nn' or 'class_mean'")
+            m = self._evaluate_block(blk, r.answer, top_k_list=top_k_list)
+            m["row_idx"] = r.Index
+            rows.append(m)
+            gens.append(blk)
+
+        mdf = pd.DataFrame(rows)
+        overall = dict(ndcg=mdf["ndcg"].mean() if not mdf.empty else 0.0)
+        for k in top_k_list:
+            for suf in [f"top_{k}_overlap", f"top_{k}_ndcg"]:
+                overall[suf] = mdf[suf].mean() if not mdf.empty else 0.0
+        return mdf, overall, gens
+
+
+def build_class_mean_table(
+    adata,
+    class_key: str = "class",
+    split_key: Optional[str] = "split",
+    split: Optional[str] = "train",
+    top_n: int = 100,
+) -> Dict[str, str]:
+    """Rank genes by mean expression within each cell class and return
+    {class_lower -> space-joined top-N gene symbols}. By default the ranking is
+    computed on the training split (`adata.obs[split_key] == split`); pass
+    split_key=None to use all cells. Used by the Class-Mean baseline.
+    """
+    sub = adata
+    if split_key is not None and split is not None and split_key in adata.obs:
+        sub = adata[adata.obs[split_key] == split]
+    genes = np.asarray(sub.var_names)
+    classes = sub.obs[class_key].astype(str).values
+    X = sub.X
+    table: Dict[str, str] = {}
+    for c in pd.unique(classes):
+        m = np.asarray(X[classes == c].mean(axis=0)).ravel()
+        table[c.strip().lower()] = " ".join(genes[np.argsort(-m)[:top_n]])
+    return table
 
  
 

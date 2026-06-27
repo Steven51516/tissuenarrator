@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tissuenarrator"
+version = "0.1.0"
+description = "Generative modeling of spatial transcriptomics with large language models"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "TissueNarrator authors", email = "1405589816lsz@gmail.com" }]
+keywords = ["spatial transcriptomics", "LLM", "generative model", "single cell"]
+
+# Pinned versions live in requirements.txt (incl. unsloth/vllm, which are
+# installed separately per the README). Only the lightweight, pip-resolvable
+# core is declared here so `pip install -e .` works for the package itself.
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "anndata",
+    "scanpy",
+    "tqdm",
+]
+
+[project.urls]
+Homepage = "https://github.com/Steven51516/tissuenarrator"
+
+[tool.setuptools.packages.find]
+include = ["tissuenarrator*"]
