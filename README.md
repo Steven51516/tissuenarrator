@@ -101,10 +101,6 @@ plus evaluation tutorials that reproduce the paper figures for each dataset:
 - [Perturb-FISH](tutorials/06_pertfish_eval.ipynb) — spatial perturbation map and per-knockout predicted-vs-ground-truth LFC.
 - [Spatial QA](tutorials/07_spatial_qa.ipynb) — QA-task data construction and TissueNarrator QA performance.
 
-All tutorial inputs go in [`tutorials/data/`](tutorials/data/README.md), which lists each
-file, what it is, and where to download it. The evaluation notebooks reconstruct metrics
-from saved inference, so **no GPU is needed to reproduce the figures**.
-
 ## Training
 
 The training tutorial offers a Jupyter notebook for interactive exploration, but we recommend running the standalone Python script for full training.  
